@@ -1,40 +1,83 @@
-# cds-trade-scooper-bot (TypeScript)
+# CDS Trade Scooper Bot
 
+A TypeScript-based trading bot for the Cardano ecosystem, designed to monitor price discrepancies and execute arbitrage trades.
 
-## Quickstart
-1. Copy `.env.example` to `.env` and fill values.
-2. npm install
-3. npm run build
-4. npm run start
+## Features
 
+- **Real-time Monitoring**: Polls liquidity pool data across all Cardano DEXes at configurable intervals.
+- **Arbitrage Detection**: Compares liquidity pool data across all Cardano DEXes (e.g., SundaeSwap, WingRiders, Minswap) to find profitable opportunities.
+- **Automated Execution**: Executes trades when profit thresholds are met.
+- **CSV Logging**: Logs probable trades to a CSV file for analysis.
 
-For development:
-1. npm install
-2. npm run dev
+## Prerequisites
 
+- Node.js (v16 or higher)
+- npm
 
-## Notes
-- The executor is a stub. Replace with real DEX/wallet integration.
-- The monitor expects a price REST API; adapt `fetchPrice()` to your provider.
-- CSV logs are appended to `logs/${cfg.csvFilename}`.
+## Installation
 
-## Implementation Plan
-### Goal Description
-Setup and run the `cds-trade-scooper-bot` project. This involves configuring environment variables, installing dependencies, building the TypeScript code, and executing the start script.
+1.  Clone the repository:
+    ```bash
+    git clone <repository-url>
+    cd cds-trade-scooper-bot
+    ```
 
-### User Review Required
-- **Environment Variables**: The `.env` file will be created with default values from `.env.example`. The user may need to update `ASSET_POLICY_ID`, `ASSET_NAME_HEX`, `TRADING_API_KEY`, etc., with actual values for the bot to function correctly.
+2.  Install dependencies:
+    ```bash
+    npm install
+    ```
 
-### Proposed Changes
-#### Configuration
-- **.env**: Copy content from `.env.example`.
+## Configuration
 
-#### Dependencies
-- **ts-node**: Install `ts-node` as a dev dependency to support `nodemon` execution.
+1.  Copy the example environment file:
+    ```bash
+    cp .env.example .env
+    ```
 
-### Verification Plan
-#### Automated Tests
-- Run `npm install` to ensure dependencies are installed.
-- Run `npm run build` to verify the project compiles without errors.
-- Run `npm start` to check if the bot starts up.
-- Run `npm run dev` to verify `ts-node` execution.
+2.  Edit `.env` and configure the following variables:
+
+    | Variable | Description | Default |
+    | :--- | :--- | :--- |
+    | `API_BASE_URL` | Base URL for the CDS API | `https://cardexscan.com/api/` |
+    | `CDS_API_KEY` | API Key for CDS API Access | - |
+    | `ASSET_POLICY_ID` | Policy ID of the asset to trade | - |
+    | `ASSET_NAME_HEX` | Hex-encoded name of the asset | - |
+    | `TICKER` | Ticker symbol of the asset (e.g., SNEK) | `SNEK` |
+    | `POLLING_INTERVAL_MS` | Interval between price checks in ms | `5000` |
+    | `PROFIT_THRESHOLD` | Minimum profit in ADA to trigger a trade | `20` |
+    | `MIN_PRICE_DELTA_PERCENT` | Minimum price difference % to log/act | `1.0` |
+    | `MNEMONIC` | Wallet mnemonic for signing transactions | - |
+    | `LOG_DIR` | Directory for log files | `logs` |
+    | `CSV_FILENAME` | Filename for trade logs | `probable_trades.csv` |
+    | `NODE_ENV` | Environment (development/production) | `development` |
+
+## Usage
+
+### Development
+
+Run the bot in development mode with hot-reloading:
+
+```bash
+npm run dev
+```
+
+### Production
+
+Build and start the bot:
+
+```bash
+npm run build
+npm start
+```
+
+## Project Structure
+
+- `src/`
+    - `index.ts`: Entry point.
+    - `monitor.ts`: Core logic for monitoring prices and finding arbitrage.
+    - `executor.ts`: Handles trade execution.
+    - `api.ts`: API interaction helper.
+    - `config.ts`: Configuration loader.
+    - `logger.ts`: CSV logging utility.
+    - `utils.ts`: Utility functions (sleep, retry, etc.).
+    - `types.ts`: TypeScript type definitions.
