@@ -2,6 +2,7 @@ import EventEmitter from 'events';
 import { Signal, Asset } from './types';
 import { getSwapEstimate, executeTrade } from './api';
 import cfg from './config';
+import { lovelaceToAda, sleep } from './utils';
 
 export declare interface Monitor {
     on(event: 'price', listener: (p: { timestamp: string; price: number }) => void): this;
@@ -17,10 +18,13 @@ export class Monitor extends EventEmitter {
         super();
     }
 
-    public start(config: any) {
+    public async start(config: any) {
         if (this.running) return;
         this.running = true;
-        void this.tick(config);
+        while (this.running) {
+            await this.tick(config);
+            await sleep(10000);
+        }
     }
 
 
@@ -35,7 +39,7 @@ export class Monitor extends EventEmitter {
 
             console.log('Monitor started with config:', config);
 
-            const data = await this.compareLPsForArbitrageDexHunter(config);
+            const data = await this.compareLPsForArbitrageCDS(config);
 
             // console.table(data);
             const pData = data.sort((a, b) => b.profitintokena - a.profitintokena);
@@ -75,52 +79,43 @@ export class Monitor extends EventEmitter {
         } catch (e) { }
     }
 
-    async compareLPsForArbitrageDexHunter(t: any): Promise<any[]> {
+    async compareLPsForArbitrageCDS(t: any): Promise<any[]> {
         let data = [];
         const token: Asset = new Asset(t.policyId, t.assetName, t.decimals, true, t.ticker);
-        const swapAmounts = Array.from({ length: 12 }, (_, i) => (i + 1) * 80); // [80, 160, ..., 800]
+        const swapAmounts = Array.from({ length: 3 }, (_, i) => (i + 1) * 80); // [80, 160, ..., 800]
         console.log(`Getting swap estimates for ${t.ticker} with amounts ${swapAmounts}`);
 
         const tokenData: any[] = await Promise.all(
             swapAmounts.map(amount =>
-                this.compareLPWithDexHunterSwapEstimate(amount, token, false, true, 2)
+                this.compareLPWithCDSSwapEstimate(amount, token, true, true, 2)
             )
         );
         const profitableResults = tokenData.filter(t => t?.profitintokena > 1);
         if (profitableResults && profitableResults.length) {
-            // Broadcasr profitable trades to discord
-            const profitableTrades = profitableResults.filter(d => d.profitintokena >= 20);
-            if (profitableTrades && profitableTrades.length > 0) {
-                // sendFormattedMessageToDiscordForTradeScooper('1360592410090012823', profitableTrades[0]);
-            }
-            // Broadcast to all connected clients
-            // pusher.trigger('watch_realtime_scooper_trades', 'scooper_data', JSON.stringify(tokenData.filter(d => d.profitintokena > 1)));
             data.push(...profitableResults);
         }
 
         return data;
     }
 
-    async compareLPWithDexHunterSwapEstimate(d: number, t: Asset, log: boolean = false, objectType: boolean = false, margin = 1) {
+    async compareLPWithCDSSwapEstimate(d: number, t: Asset, log: boolean = true, objectType: boolean = false, margin = 1) {
         let msg = "";
         if (log) console.log(`Getting swap estimates for ${t.ticker} with amount ${d}`);
 
         const a = await getSwapEstimate({ tokenInAmount: d, tokenIn: "lovelace", tokenOut: t, slippage: 1, blacklisted_dexes: ["CERRA", "GENIUS", "TEDDYSWAP", "SPECTRUM"] });
-        console.log(a);
         if (!a) {
             if (log) console.error(`#1 Swap Estimate failed for ${t.ticker}`);
             return objectType ? { msg: "" } : msg;
         }
-        const b = await getSwapEstimate({ tokenInAmount: a?.data?.total_output, tokenIn: t, tokenOut: "lovelace", slippage: 1, blacklisted_dexes: ["CERRA", "GENIUS", "TEDDYSWAP", "SPECTRUM"] });
+        const b = await getSwapEstimate({ tokenInAmount: a?.data?.estimatedTotalRecieve, tokenIn: t, tokenOut: "lovelace", slippage: 1, blacklisted_dexes: ["CERRA", "GENIUS", "TEDDYSWAP", "SPECTRUM"] });
         if (!b) {
             if (log) console.error(`#2 Swap Estimate failed for ${t.ticker}`);
             return objectType ? { msg: "" } : msg;
         }
-        // const output = `${t.ticker}->ADA ${a?.data?.splits[0].dex} @ ${a.data.total_input} -> ${b?.data?.splits[0].dex} @ ${b.data.total_output} \n`;
-        const output = `ADA -> ${t.ticker} on Dex: ${a?.data?.splits.map((d: any) => d.dex).join(", ")}\n${t.ticker} recieved: ${a.data.total_output}
-      ${t.ticker} -> ADA on Dex: ${b?.data?.splits.map((d: any) => d.dex).join(", ")}\nADA Involved: ${a.data.total_input} -> ${b.data.total_output}\nPolicy Id: ${t.policyId} \n\n ------------- \n`;
+        // const output = `${t.ticker}->ADA ${a?.data?.splits[0].dex} @ ${a.data.total_input} -> ${b?.data?.splits[0].dex} @ ${b.data.estimatedTotalRecieve} \n`;
+        const output = `ADA -> ${t.ticker} on Dex: ${a?.data?.splits.map((d: any) => d.dex).join(", ")}\n${t.ticker} recieved: ${a.data.estimatedTotalRecieve}\n${t.ticker} -> ADA on Dex: ${b?.data?.splits.map((d: any) => d.dex).join(", ")}\nADA Involved: ${d} -> ${lovelaceToAda(b.data.estimatedTotalRecieve)}\nPolicy Id: ${t.policyId} \n\n ------------- \n`;
         if (log) console.log(output);
-        if (a.data.total_input < b.data.total_output && (b.data.total_output - a.data.total_input) > margin) {
+        if (d < lovelaceToAda(b.data.estimatedTotalRecieve) && (lovelaceToAda(b.data.estimatedTotalRecieve) - d) > margin) {
             console.log(output);
             msg += output;
         }
@@ -133,12 +128,12 @@ export class Monitor extends EventEmitter {
             tokenbhex: t.nameHex,
             tokenbticker: t.ticker,
             tokenbdecimals: t.decimals,
-            tokenain: a.data.total_input,
-            tokenbout: a.data.total_output,
-            tokenaout: b.data.total_output,
+            tokenain: d,
+            tokenbout: a.data.estimatedTotalRecieve,
+            tokenaout: lovelaceToAda(b.data.estimatedTotalRecieve),
             dexesA: a?.data && a?.data?.splits ? a?.data?.splits.map((d: any) => d.dex) : [],
             dexesB: b?.data && b?.data?.splits ? b?.data?.splits.map((d: any) => d.dex) : [],
-            profitintokena: Number(b.data.total_output - a.data.total_input)
+            profitintokena: Number(b.data.estimatedTotalRecieve - d)
         } : msg;
     }
 }
